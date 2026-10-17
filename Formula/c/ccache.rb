@@ -32,11 +32,16 @@ class Ccache < Formula
   depends_on "zstd"
 
   on_macos do
-    depends_on "gcc" => :build
+    depends_on "llvm" => [:build, :no_linkage] if DevelopmentTools.clang_build_version <= 1400
   end
 
   on_linux do
     depends_on "zlib-ng-compat"
+  end
+
+  fails_with :clang do
+    build 1400
+    cause "Requires C++20"
   end
 
   deny_network_access!
@@ -57,14 +62,11 @@ class Ccache < Formula
     # See https://github.com/Homebrew/homebrew-core/pull/83900#issuecomment-90624064
     #
     # FIXME: Running test with clang adds SDKSettings.json which causes test failures
-    # and also hit test.remote_helper after a brew change.
-    test_cc = if OS.mac?
-      formula_opt_bin("gcc")/"gcc"
-    else
-      DevelopmentTools.locate(DevelopmentTools.default_compiler)
-    end
-    with_env(CC: test_cc) do
-      system "ctest", "-j#{ENV.make_jobs}", "--test-dir", "build", "--rerun-failed", "--output-on-failure"
+    # and also hit test.remote_helper after a brew change, so skip the test suites on macOS
+    # (without `--rerun-failed`, which would ignore the filter).
+    test_args = OS.mac? ? ["--exclude-regex", "^test\\."] : ["--rerun-failed"]
+    with_env(CC: DevelopmentTools.locate(DevelopmentTools.default_compiler)) do
+      system "ctest", "-j#{ENV.make_jobs}", "--test-dir", "build", *test_args, "--output-on-failure"
     end
 
     system "cmake", "--install", "build"
